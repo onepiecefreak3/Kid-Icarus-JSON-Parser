@@ -14,20 +14,35 @@ namespace JSONParser
     {
         static void Main(string[] args)
         {
-            if (args.Count() < 1)
+            if (args.Count() < 2)
             {
-                Console.WriteLine("You need to specify a file");
+                Console.WriteLine("Usage:\nJSONParser.exe <mode> <filepath>\n\nAvailable modes:\n" +
+                    "-e\tExports a binary JSON to human-readable JSON\n-i\tImports a human-readable JSON into the binary form");
                 Environment.Exit(0);
             }
 
-            if (!File.Exists(args[0]))
+            if (args[0] != "-e" && args[0] != "-i")
             {
-                Console.WriteLine($"File {args[0]} doesn't exist");
+                Console.WriteLine("Available modes:\n" +
+                    "-e\tExports a binary JSON to human-readable JSON\n-i\tImports a human-readable JSON into the binary form");
                 Environment.Exit(0);
             }
 
-            var @string = ReadJSON(File.OpenRead(args[0]));
-            File.WriteAllText(Path.GetDirectoryName(args[0]) + "\\export.json", @string);
+            if (!File.Exists(args[1]))
+            {
+                Console.WriteLine($"File {args[1]} doesn't exist");
+                Environment.Exit(0);
+            }
+
+            if (args[0] == "-e")
+            {
+                var @string = ReadJSON(File.OpenRead(args[1]));
+                File.WriteAllText(Path.GetDirectoryName(args[1]) + "\\export.json", @string);
+            }
+            else
+            {
+                WriteJSON(File.ReadAllText(args[1]), Path.GetDirectoryName(args[1]) + "\\import.json");
+            }
         }
 
         public static string ReadJSON(Stream input)
@@ -54,9 +69,79 @@ namespace JSONParser
             }
         }
 
-        public static void WriteJSON()
+        public static void WriteJSON(string json, string des)
         {
+            using (var bw = new BinaryWriterX(File.OpenWrite(des)))
+            {
+                var parsed = JsonConvert.DeserializeObject<Init>(json);
+                bw.WriteASCII(parsed.magic);
+                bw.Write(parsed.unk1);
+                bw.Write(parsed.unk2);
+                bw.Write(parsed.unk3);
+                WriteParameter(bw.BaseStream, parsed.content);
+            }
+        }
 
+        public static void WriteParameter(Stream des, object input)
+        {
+            using (var bw = new BinaryWriterX(des, true))
+            {
+                switch (input)
+                {
+                    case JArray jarr:
+                        try
+                        {
+                            jarr[0].ToObject(typeof(Obj));
+
+                            //array consisting of Obj's
+                            bw.Write((byte)5);
+                            bw.Write(jarr.Count);
+
+                            for (int i = 0; i < jarr.Count; i++)
+                            {
+                                var obj = jarr[i].ToObject(typeof(Obj));
+                                bw.Write(Encoding.ASCII.GetByteCount((obj as Obj).name));
+                                bw.WriteASCII((obj as Obj).name);
+                                WriteParameter(bw.BaseStream, (obj as Obj).@object);
+                            }
+                        }
+                        catch
+                        {
+                            //loose array
+                            bw.Write((byte)6);
+                            bw.Write(jarr.Count);
+                            for (int i = 0; i < jarr.Count; i++)
+                            {
+                                WriteParameter(bw.BaseStream, jarr[i]);
+                            }
+                        }
+                        break;
+                    case string @string:
+                        bw.Write((byte)1);
+                        bw.Write(Encoding.ASCII.GetByteCount(@string));
+                        bw.WriteASCII(@string);
+                        break;
+                    case float @float:
+                        bw.Write((byte)3);
+                        bw.Write(@float);
+                        break;
+                    case long @long:
+                        if (@long < 0 || @long >= 256)
+                        {
+                            bw.Write((byte)2);
+                            bw.Write((int)@long);
+                        }
+                        else
+                        {
+                            bw.Write((byte)4);
+                            bw.Write((byte)@long);
+                        }
+                        break;
+                    default:
+                        ;
+                        break;
+                }
+            }
         }
 
         public static object GetParameter(Stream input)
