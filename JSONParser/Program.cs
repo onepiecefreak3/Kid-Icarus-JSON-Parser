@@ -86,61 +86,75 @@ namespace JSONParser
         {
             using (var bw = new BinaryWriterX(des, true))
             {
-                switch (input)
+                //switch (input)
+                //{
+                //  case JArray jarr:
+                /*try
                 {
-                    case JArray jarr:
-                        try
-                        {
-                            jarr[0].ToObject(typeof(Obj));
+                    jarr[0].ToObject(typeof(Obj));
 
-                            //array consisting of Obj's
-                            bw.Write((byte)5);
-                            bw.Write(jarr.Count);
+                    //array consisting of Obj's
+                    bw.Write((byte)5);
+                    bw.Write(jarr.Count);
 
-                            for (int i = 0; i < jarr.Count; i++)
-                            {
-                                var obj = jarr[i].ToObject(typeof(Obj));
-                                bw.Write(Encoding.ASCII.GetByteCount((obj as Obj).name));
-                                bw.WriteASCII((obj as Obj).name);
-                                WriteParameter(bw.BaseStream, (obj as Obj).@object);
-                            }
-                        }
-                        catch
+                    for (int i = 0; i < jarr.Count; i++)
+                    {
+                        var obj = jarr[i].ToObject(typeof(Obj));
+                        bw.Write(Encoding.ASCII.GetByteCount((obj as Obj).name));
+                        bw.WriteASCII((obj as Obj).name);
+                        WriteParameter(bw.BaseStream, (obj as Obj).@object);
+                    }
+                }
+                catch
+                {
+                    //loose array
+                    bw.Write((byte)6);
+                    bw.Write(jarr.Count);
+                    for (int i = 0; i < jarr.Count; i++)
+                    {
+                        WriteParameter(bw.BaseStream, jarr[i]);
+                    }
+                }*/
+                //  break;
+                var valueMeta = (input as JObject).ToObject<ObjMeta>();
+                if (valueMeta.type != 0)
+                    bw.Write((byte)valueMeta.type);
+                switch (valueMeta.type)
+                {
+                    case 0:
+                        //array type 5 or 6 element
+                        if (valueMeta.name != "")
                         {
-                            //loose array
-                            bw.Write((byte)6);
-                            bw.Write(jarr.Count);
-                            for (int i = 0; i < jarr.Count; i++)
-                            {
-                                WriteParameter(bw.BaseStream, jarr[i]);
-                            }
+                            bw.Write(Encoding.ASCII.GetByteCount(valueMeta.name));
+                            bw.WriteASCII(valueMeta.name);
                         }
+                        WriteParameter(bw.BaseStream, valueMeta.value);
                         break;
-                    case string @string:
-                        bw.Write((byte)1);
-                        bw.Write(Encoding.ASCII.GetByteCount(@string));
-                        bw.WriteASCII(@string);
+                    case 1:
+                        bw.Write(Encoding.ASCII.GetByteCount((string)valueMeta.value));
+                        bw.WriteASCII((string)valueMeta.value);
                         break;
-                    case float @float:
-                        bw.Write((byte)3);
-                        bw.Write(@float);
+                    case 2:
+                        bw.Write(Int32.Parse(valueMeta.value.ToString()));
                         break;
-                    case long @long:
-                        if (@long < 0 || @long >= 256)
-                        {
-                            bw.Write((byte)2);
-                            bw.Write((int)@long);
-                        }
-                        else
-                        {
-                            bw.Write((byte)4);
-                            bw.Write((byte)@long);
-                        }
+                    case 3:
+                        bw.Write(float.Parse(valueMeta.value.ToString()));
                         break;
-                    default:
-                        ;
+                    case 4:
+                        bw.Write(Byte.Parse(valueMeta.value.ToString()));
+                        break;
+                    case 5:
+                    case 6:
+                        var list = (valueMeta.value as JArray);
+                        bw.Write(list.Count);
+                        foreach (var item in list)
+                            WriteParameter(bw.BaseStream, item);
                         break;
                 }
+                /*break;
+            default:
+                break;*/
+                //}
             }
         }
 
@@ -155,45 +169,49 @@ namespace JSONParser
                         //string
                         var length = br.ReadInt32();
                         var str = br.ReadString(length);
-                        return str;
+                        return new ObjMeta { type = ident, value = str };
                     case 2:
                         var integer = br.ReadInt32();
-                        return integer;
+                        return new ObjMeta { type = ident, value = integer };
                     case 3:
                         var flt = br.ReadSingle();
-                        return flt;
+                        return new ObjMeta { type = ident, value = flt };
                     case 4:
-                        var @byte = br.ReadByte();
-                        return @byte;
+                        var b = br.ReadByte();
+                        return new ObjMeta { type = ident, value = b };
                     case 5:
-                        //create new array and add
+                        //create array with named elements
                         var count = br.ReadInt32();
-                        var arr = new JArray();
+                        var arr = new ObjMeta { type = 5, value = new List<ObjMeta>() };
                         for (int i = 0; i < count; i++)
                         {
                             length = br.ReadInt32();
                             str = br.ReadString(length);
-                            var item = new Obj { name = str, @object = GetParameter(input) };
-                            arr.Add(JObject.FromObject(item));
+                            var item = new ObjMeta { name = str, value = GetParameter(input) };
+                            (arr.value as List<ObjMeta>).Add(item);
                         }
                         return arr;
                     case 6:
-                        //declare array fields
+                        //create array with unnamed fields
                         count = br.ReadInt32();
-                        var objArr = new List<object>();
+                        arr = new ObjMeta { type = 6, value = new List<ObjMeta>() };
                         for (int i = 0; i < count; i++)
-                            objArr.Add(GetParameter(input));
-                        return objArr;
+                        {
+                            var item = new ObjMeta { value = GetParameter(input) };
+                            (arr.value as List<ObjMeta>).Add(item);
+                        }
+                        return arr;
                     default:
                         throw new Exception($"Unknown Identifier {ident} at 0x{br.BaseStream.Position - 1:X8}.");
                 }
             }
         }
 
-        public class Obj
+        public class ObjMeta
         {
-            public string name;
-            public object @object;
+            public string name = "";
+            public int type = 0;
+            public object value;
         }
 
         public class Init
