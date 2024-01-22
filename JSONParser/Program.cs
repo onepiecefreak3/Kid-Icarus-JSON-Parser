@@ -133,13 +133,13 @@ namespace JSONParser
                         bw.WriteASCII((string)valueMeta.value);
                         break;
                     case 2:
-                        bw.Write(Int32.Parse(valueMeta.value.ToString()));
+                        bw.Write(int.Parse(valueMeta.value.ToString()));
                         break;
                     case 3:
                         bw.Write(float.Parse(valueMeta.value.ToString()));
                         break;
                     case 4:
-                        bw.Write(Byte.Parse(valueMeta.value.ToString()));
+                        bw.Write(byte.Parse(valueMeta.value.ToString()));
                         break;
                     case 5:
                     case 6:
